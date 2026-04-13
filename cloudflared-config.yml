@@ -1,0 +1,11 @@
+# Cloudflare Tunnel configuration
+# Replace <TUNNEL_UUID> with your actual tunnel UUID after running:
+#   cloudflared tunnel create asu-server
+
+tunnel: <TUNNEL_UUID>
+credentials-file: /home/asu/.cloudflared/<TUNNEL_UUID>.json
+
+ingress:
+  - hostname: asu.yourdomain.com
+    service: http://localhost:8000
+  - service: http_status:404

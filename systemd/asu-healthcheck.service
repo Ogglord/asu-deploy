@@ -1,0 +1,7 @@
+[Unit]
+Description=ASU Server Health Check
+
+[Service]
+Type=oneshot
+User=asu
+ExecStart=/home/asu/asu-server/healthcheck.sh

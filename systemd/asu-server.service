@@ -1,0 +1,16 @@
+[Unit]
+Description=ASU Server (podman-compose)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=asu
+WorkingDirectory=/home/asu/asu-server
+ExecStart=/usr/bin/podman-compose up
+ExecStop=/usr/bin/podman-compose down
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -16,10 +16,10 @@ echo "=== Deploying ASU server files ==="
 # --- Scripts and compose file ---
 echo "[1/3] Copying files to $ASU_HOME..."
 mkdir -p "$ASU_HOME"
-for f in podman-compose.yml healthcheck.sh update-branches.sh; do
+for f in podman-compose.yml healthcheck.sh; do
   cp "$SCRIPT_DIR/$f" "$ASU_HOME/"
 done
-chmod +x "$ASU_HOME/healthcheck.sh" "$ASU_HOME/update-branches.sh"
+chmod +x "$ASU_HOME/healthcheck.sh"
 chown -R asu:asu "$ASU_HOME"
 
 # --- Systemd units ---
@@ -27,7 +27,7 @@ echo "[2/3] Installing systemd units..."
 cp "$SCRIPT_DIR"/systemd/*.service /etc/systemd/system/
 cp "$SCRIPT_DIR"/systemd/*.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable asu-server cloudflared asu-healthcheck.timer asu-update-branches.timer
+systemctl enable asu-server cloudflared asu-healthcheck.timer
 
 # --- Restart running services to pick up changes ---
 echo "[3/3] Restarting services..."

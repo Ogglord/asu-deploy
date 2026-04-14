@@ -10,7 +10,7 @@ services:
       - "127.0.0.1:6379:6379"
 
   server:
-    image: docker.io/openwrt/asu:latest
+    image: ghcr.io/ogglord/asu:latest
     command: uv run uvicorn --host 0.0.0.0 'asu.main:app'
     restart: always
     env_file: .env
@@ -20,7 +20,7 @@ services:
       - "127.0.0.1:8000:8000"
 
   worker:
-    image: docker.io/openwrt/asu:latest
+    image: ghcr.io/ogglord/asu:latest
     command: uv run rqworker --url redis://redis default
     restart: always
     env_file: .env

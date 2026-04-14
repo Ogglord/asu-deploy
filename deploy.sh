@@ -15,7 +15,7 @@ ASU_HOME=/home/asu/asu-server
 echo "=== Deploying ASU server files ==="
 
 # --- Scripts and compose file ---
-echo "[1/4] Copying files to $ASU_HOME..."
+echo "[1/5] Copying files to $ASU_HOME..."
 mkdir -p "$ASU_HOME"
 for f in podman-compose.yml healthcheck.sh; do
   cp "$SCRIPT_DIR/$f" "$ASU_HOME/"
@@ -23,19 +23,48 @@ done
 chmod +x "$ASU_HOME/healthcheck.sh"
 chown -R asu:asu "$ASU_HOME"
 
+# --- Ensure required env vars are present in .env ---
+echo "[2/5] Updating .env with required settings..."
+ENV_FILE="$ASU_HOME/.env"
+
+# Helper: add key=value only if the key is not already present
+add_env_if_missing() {
+  local key="$1" val="$2"
+  if ! grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    echo "${key}=${val}" >> "$ENV_FILE"
+    echo "  added ${key}"
+  fi
+}
+
+# ASU_UID must always reflect the actual uid of the asu user (used in compose)
+ASU_UID=$(id -u asu)
+if grep -q "^ASU_UID=" "$ENV_FILE" 2>/dev/null; then
+  sed -i "s|^ASU_UID=.*|ASU_UID=${ASU_UID}|" "$ENV_FILE"
+else
+  echo "ASU_UID=${ASU_UID}" >> "$ENV_FILE"
+  echo "  added ASU_UID=${ASU_UID}"
+fi
+
+# Path to the Podman socket inside the worker container (mounted at this path)
+add_env_if_missing "CONTAINER_SOCKET_PATH" "/run/podman/podman.sock"
+# Whether to allow custom UCI defaults scripts on first boot
+add_env_if_missing "ALLOW_DEFAULTS" "0"
+
+chown asu:asu "$ENV_FILE"
+
 # --- Systemd units ---
-echo "[2/4] Installing systemd units..."
+echo "[3/5] Installing systemd units..."
 cp "$SCRIPT_DIR"/systemd/*.service /etc/systemd/system/
 cp "$SCRIPT_DIR"/systemd/*.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable asu-server cloudflared asu-healthcheck.timer
 
 # --- Pull latest container images ---
-echo "[3/4] Pulling latest container images..."
+echo "[4/5] Pulling latest container images..."
 sudo -u asu podman-compose -f "$ASU_HOME/podman-compose.yml" pull
 
 # --- Restart running services to pick up changes ---
-echo "[4/4] Restarting services..."
+echo "[5/5] Restarting services..."
 for svc in asu-server cloudflared; do
   if systemctl is-active --quiet "$svc"; then
     systemctl restart "$svc"
@@ -46,4 +75,39 @@ for svc in asu-server cloudflared; do
 done
 
 echo ""
-echo "=== Deploy complete ==="
+echo "=== Health checks ==="
+echo "Waiting for server to become ready..."
+max_wait=60
+interval=3
+elapsed=0
+until curl -o /dev/null -fsS -m 5 http://localhost:8000/ 2>/dev/null; do
+  if [[ $elapsed -ge $max_wait ]]; then
+    echo "  Server did not respond within ${max_wait}s — check 'journalctl -u asu-server'"
+    exit 1
+  fi
+  sleep $interval
+  elapsed=$((elapsed + interval))
+done
+
+BASE=http://localhost:8000
+all_ok=true
+for path in "/" "/json/v1/overview.json" "/static/style.css"; do
+  http_code=$(curl -o /dev/null -sS -m 10 -w "%{http_code}" "$BASE$path" 2>/dev/null); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    echo "  FAIL (connection error)  $path"
+    all_ok=false
+  elif [[ "$http_code" =~ ^2 ]]; then
+    echo "  OK   $http_code  $path"
+  else
+    echo "  FAIL $http_code  $path"
+    all_ok=false
+  fi
+done
+
+if $all_ok; then
+  echo ""
+  echo "=== Deploy complete ==="
+else
+  echo ""
+  echo "=== Deploy complete (with health check failures — check 'journalctl -u asu-server' for logs) ==="
+fi

@@ -15,7 +15,7 @@ if [[ -z "${HC_UUID:-}" ]]; then
   exit 1
 fi
 
-if curl -fsS -m 10 http://localhost:8000/api/v1/overview > /dev/null 2>&1; then
+if curl -fsS -m 10 http://localhost:8000/json/v1/overview.json > /dev/null 2>&1; then
   curl -fsS -m 10 --retry 3 "https://hc-ping.com/${HC_UUID}" || true
 else
   curl -fsS -m 10 --retry 3 "https://hc-ping.com/${HC_UUID}/fail" || true

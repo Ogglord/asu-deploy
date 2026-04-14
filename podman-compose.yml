@@ -29,7 +29,7 @@ services:
     userns: keep-id
     volumes:
       # Mount host Podman socket so worker can spawn ImageBuilder containers
-      - /run/user/1000/podman/podman.sock:/run/podman/podman.sock
+      - /run/user/${ASU_UID}/podman/podman.sock:/run/podman/podman.sock
     security_opt:
       - label=disable
 

@@ -45,29 +45,30 @@ fi
 # --- Create service user ---
 echo "[4/7] Setting up service user..."
 if ! id asu &>/dev/null; then
-  useradd -r -m -s /bin/bash asu
+  useradd -m -s /bin/bash asu
 fi
 loginctl enable-linger asu
 
-# --- Deploy config files ---
+# Required for rootless Podman image unpacking
+if ! grep -q '^asu:' /etc/subuid; then
+  usermod --add-subuids 100000-165535 --add-subgids 100000-165535 asu
+fi
+su -l asu -c 'podman system migrate'
+
+# --- Deploy config files, scripts, and systemd units ---
 echo "[5/7] Deploying configuration files..."
 ASU_HOME=/home/asu/asu-server
-mkdir -p "$ASU_HOME"
-
-for f in podman-compose.yml healthcheck.sh update-branches.sh; do
-  cp "$SCRIPT_DIR/$f" "$ASU_HOME/"
-done
 
 # Copy .env only if it doesn't exist (don't overwrite user edits)
 if [[ ! -f "$ASU_HOME/.env" ]]; then
+  mkdir -p "$ASU_HOME"
   cp "$SCRIPT_DIR/.env.example" "$ASU_HOME/.env"
   echo "  Created .env from template -- edit it with your settings"
 else
   echo "  .env already exists, skipping (won't overwrite)"
 fi
 
-chmod +x "$ASU_HOME/healthcheck.sh" "$ASU_HOME/update-branches.sh"
-chown -R asu:asu "$ASU_HOME"
+bash "$SCRIPT_DIR/deploy.sh"
 
 # --- Cloudflare Tunnel config ---
 echo "[6/7] Setting up Cloudflare Tunnel config..."
@@ -77,12 +78,7 @@ if [[ -f "$SCRIPT_DIR/cloudflared-config.yml" ]]; then
 fi
 chown -R asu:asu /home/asu/.cloudflared
 
-# --- Systemd services ---
-echo "[7/7] Installing systemd services..."
-cp "$SCRIPT_DIR"/systemd/*.service /etc/systemd/system/
-cp "$SCRIPT_DIR"/systemd/*.timer /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable asu-server cloudflared asu-healthcheck.timer asu-update-branches.timer
+echo "[7/7] Systemd units handled by deploy.sh"
 
 echo ""
 echo "=== Bootstrap complete ==="

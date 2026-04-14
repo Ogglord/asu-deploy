@@ -3,7 +3,6 @@ set -euo pipefail
 
 BRANCHES_URL="https://raw.githubusercontent.com/Ogglord/openwrt-imagebuilder-mt6000/releases/branches.json"
 ENV_FILE="/home/asu/asu-server/.env"
-COMPOSE_DIR="/home/asu/asu-server"
 
 # Fetch and validate
 JSON=$(curl -fsSL "$BRANCHES_URL")
@@ -29,5 +28,4 @@ else
 fi
 
 # Restart the ASU stack to pick up new config
-cd "$COMPOSE_DIR"
-podman-compose up -d
+systemctl restart asu-server

@@ -1,0 +1,9 @@
+[Unit]
+Description=Update ASU branches from branches.json
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=asu
+ExecStart=/home/asu/asu-server/update-branches.sh

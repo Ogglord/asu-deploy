@@ -54,7 +54,7 @@ echo "[5/7] Deploying configuration files..."
 ASU_HOME=/home/asu/asu-server
 mkdir -p "$ASU_HOME"
 
-for f in podman-compose.yml healthcheck.sh; do
+for f in podman-compose.yml healthcheck.sh update-branches.sh; do
   cp "$SCRIPT_DIR/$f" "$ASU_HOME/"
 done
 
@@ -66,7 +66,7 @@ else
   echo "  .env already exists, skipping (won't overwrite)"
 fi
 
-chmod +x "$ASU_HOME/healthcheck.sh"
+chmod +x "$ASU_HOME/healthcheck.sh" "$ASU_HOME/update-branches.sh"
 chown -R asu:asu "$ASU_HOME"
 
 # --- Cloudflare Tunnel config ---
@@ -82,7 +82,7 @@ echo "[7/7] Installing systemd services..."
 cp "$SCRIPT_DIR"/systemd/*.service /etc/systemd/system/
 cp "$SCRIPT_DIR"/systemd/*.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable asu-server cloudflared asu-healthcheck.timer
+systemctl enable asu-server cloudflared asu-healthcheck.timer asu-update-branches.timer
 
 echo ""
 echo "=== Bootstrap complete ==="

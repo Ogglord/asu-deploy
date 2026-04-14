@@ -36,17 +36,15 @@ add_env_if_missing() {
   fi
 }
 
-# ASU_UID must always reflect the actual uid of the asu user (used in compose)
+# CONTAINER_SOCKET_PATH must always reflect the actual host socket path (uid may change)
 ASU_UID=$(id -u asu)
-if grep -q "^ASU_UID=" "$ENV_FILE" 2>/dev/null; then
-  sed -i "s|^ASU_UID=.*|ASU_UID=${ASU_UID}|" "$ENV_FILE"
+SOCKET_PATH="/run/user/${ASU_UID}/podman/podman.sock"
+if grep -q "^CONTAINER_SOCKET_PATH=" "$ENV_FILE" 2>/dev/null; then
+  sed -i "s|^CONTAINER_SOCKET_PATH=.*|CONTAINER_SOCKET_PATH=${SOCKET_PATH}|" "$ENV_FILE"
 else
-  echo "ASU_UID=${ASU_UID}" >> "$ENV_FILE"
-  echo "  added ASU_UID=${ASU_UID}"
+  echo "CONTAINER_SOCKET_PATH=${SOCKET_PATH}" >> "$ENV_FILE"
+  echo "  added CONTAINER_SOCKET_PATH=${SOCKET_PATH}"
 fi
-
-# Path to the Podman socket inside the worker container (mounted at this path)
-add_env_if_missing "CONTAINER_SOCKET_PATH" "/run/podman/podman.sock"
 # Whether to allow custom UCI defaults scripts on first boot
 add_env_if_missing "ALLOW_DEFAULTS" "0"
 

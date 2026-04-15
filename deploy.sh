@@ -17,7 +17,7 @@ echo "=== Deploying ASU server files ==="
 # --- Scripts and compose file ---
 echo "[1/5] Copying files to $ASU_HOME..."
 mkdir -p "$ASU_HOME"
-for f in podman-compose.yml healthcheck.sh; do
+for f in podman-compose.yml healthcheck.sh asu.toml; do
   cp "$SCRIPT_DIR/$f" "$ASU_HOME/"
 done
 chmod +x "$ASU_HOME/healthcheck.sh"

@@ -18,6 +18,8 @@ services:
       - redis
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - ./asu.toml:/app/asu.toml:ro
 
   worker:
     image: ghcr.io/ogglord/asu:latest
@@ -28,8 +30,9 @@ services:
       - redis
     userns: keep-id
     volumes:
+      - ./asu.toml:/app/asu.toml:ro
       # Mount host Podman socket so worker can spawn ImageBuilder containers
-      - $CONTAINER_SOCKET_PATH:$CONTAINER_SOCKET_PATH:rw
+      - $CONTAINER_SOCKET_PATH:/var/podman.sock:rw
     security_opt:
       - label=disable
 

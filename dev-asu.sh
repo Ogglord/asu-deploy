@@ -60,7 +60,66 @@ log_level = "DEBUG"
 EOF
 
 # --- Install dependencies and start the dev server ---
-echo "Installing dependencies and starting ASU dev server..."
+echo "Installing dependencies..."
 cd "$ASU_DIR"
 uv sync --extra dev
-exec uv run fastapi dev asu/main.py --port 8001
+
+DEV_PORT=8001
+BASE="http://127.0.0.1:${DEV_PORT}"
+
+echo "Starting ASU dev server on ${BASE} ..."
+uv run fastapi dev asu/main.py --port "$DEV_PORT" &
+SERVER_PID=$!
+
+# --- Health checks ---
+echo "Waiting for server to become ready..."
+MAX_WAIT=30
+ELAPSED=0
+while ! curl -o /dev/null -fsS -m 2 "$BASE/" 2>/dev/null; do
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "Server process exited unexpectedly"
+    exit 1
+  fi
+  if [[ $ELAPSED -ge $MAX_WAIT ]]; then
+    echo "Server did not respond within ${MAX_WAIT}s"
+    kill "$SERVER_PID" 2>/dev/null
+    exit 1
+  fi
+  sleep 1
+  ELAPSED=$((ELAPSED + 1))
+done
+
+ALL_OK=true
+for PATH_CHECK in "/" "/json/v1/overview.json" "/json/v1/branches.json"; do
+  CODE=$(curl -o /dev/null -sS -m 5 -w "%{http_code}" "${BASE}${PATH_CHECK}" 2>/dev/null) || CODE="ERR"
+  if [[ "$CODE" =~ ^2 ]]; then
+    echo "  OK   ${CODE}  ${PATH_CHECK}"
+  else
+    echo "  FAIL ${CODE}  ${PATH_CHECK}"
+    ALL_OK=false
+  fi
+done
+
+# Show loaded branches
+BRANCHES=$(curl -sS -m 5 "${BASE}/json/v1/overview.json" 2>/dev/null | \
+  python3 -c "
+import json,sys
+data = json.load(sys.stdin)
+custom = [k for k in data.get('branches',{}) if k not in ('SNAPSHOT','25.12','24.10','23.05','22.03','21.02')]
+print(', '.join(custom) if custom else '(none)')
+" 2>/dev/null) || BRANCHES="(failed to fetch)"
+echo ""
+echo "  Branches: ${BRANCHES}"
+
+if $ALL_OK; then
+  echo ""
+  echo "=== Dev server ready at ${BASE} ==="
+  echo "    Docs: ${BASE}/docs"
+  echo "    Press Ctrl+C to stop"
+else
+  echo ""
+  echo "=== Dev server started with health check failures ==="
+fi
+
+# Foreground the server so Ctrl+C stops it cleanly
+wait "$SERVER_PID"

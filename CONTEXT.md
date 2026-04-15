@@ -29,32 +29,58 @@ External access is provided by a **Cloudflare Tunnel** (no open ports on the VPS
 
 - **OS**: Debian 12 (Bookworm)
 - **Container runtime**: Podman + podman-compose (no Docker)
+- **Service user**: `asu` (rootless Podman, requires `/etc/subuid` and `/etc/subgid` entries)
 - **Worker containers**: use `--userns=keep-id` and mount the host Podman socket to spawn sibling ImageBuilder containers
 
 ## Key configuration
 
-The `.env` file controls the server behavior. The most important setting is `BRANCHES`, a JSON object that:
-- Maps each pesa firmware branch to a display name
-- Points to the correct package directory in [pesa1234/MT6000_cust_build](https://github.com/pesa1234/MT6000_cust_build) via raw GitHub URLs
-- Maps `mediatek/filogic` target to a container tag suffix so the worker pulls the right ImageBuilder container from ghcr.io
+The `.env` file controls server behavior. Important settings:
 
-The `BRANCHES` config must be updated manually when pesa publishes new releases.
+| Variable | Description |
+|---|---|
+| `BRANCHES_URL` | URL to `branches.json` published by the imagebuilder CI. ASU fetches this at startup and on each overview request to discover available branches, versions, and targets. |
+| `UPSTREAM_URL` | Base URL for package downloads (`pesa1234/MT6000_cust_build` raw GitHub) |
+| `BASE_CONTAINER` | Base image name; worker appends `:{target}-{tag}` to pull the right ImageBuilder |
+| `HC_UUID` | healthcheck.io UUID for uptime monitoring |
+
+`BRANCHES_URL` points to:
+```
+https://raw.githubusercontent.com/Ogglord/openwrt-imagebuilder-mt6000/releases/branches.json
+```
+This file is published automatically by the imagebuilder CI after each successful build. See `BRANCHES.md` for its schema.
+
+## Forked ASU server
+
+This setup uses a **forked ASU image** (`ghcr.io/ogglord/asu:latest`) instead of the upstream `openwrt/asu`. The fork is at [Ogglord/asu](https://github.com/Ogglord/asu) and adds:
+
+1. **`BRANCHES_URL` support** (`asu/util.py` — `reload_branches_from_url()`): when set, ASU fetches `branches.json` from that URL and uses it as the single source of truth for branches, versions, and targets. This replaces the combination of the upstream `.versions.json` and per-version `.targets.json` fetches, neither of which exist in the pesa custom build setup.
+
+The upstream ASU expects these files at `{UPSTREAM_URL}/.versions.json` and `{UPSTREAM_URL}/{path}/.targets.json`. These do not exist in `pesa1234/MT6000_cust_build`, so the upstream image cannot be used as-is.
 
 ## Deployment
 
-`bootstrap.sh` is an idempotent script that provisions a fresh Debian 12 VPS:
+`bootstrap.sh` provisions a fresh Debian 12 VPS (run once):
 1. Installs Podman, podman-compose, passt, cloudflared
 2. Configures kernel parameters for Redis
-3. Creates a dedicated `asu` service user with lingering enabled
-4. Deploys config files and systemd units
-5. Prints post-install steps for Cloudflare Tunnel setup
+3. Creates `asu` service user, sets up subuid/subgid for rootless Podman, runs `podman system migrate`
+4. Calls `deploy.sh` and sets up the Cloudflare Tunnel config
+
+`deploy.sh` updates an existing installation (run after `git pull`):
+1. Copies updated scripts and `podman-compose.yml`
+2. Installs/reloads systemd units
+3. Pulls latest container images (`ghcr.io/ogglord/asu:latest`, etc.)
+4. Restarts `asu-server` and `cloudflared`
 
 ## Monitoring
 
-- A systemd timer runs `healthcheck.sh` every 5 minutes
-- It checks the API endpoint (`/api/v1/revision`) and pings healthcheck.io with success or failure
-- The healthcheck UUID is read from `HC_UUID` in `.env`
+- `asu-healthcheck.timer` runs `healthcheck.sh` every 5 minutes
+- Checks `GET /api/v1/overview` and pings healthcheck.io with success or failure
+- UUID read from `HC_UUID` in `.env`
 
-## Companion repository
+## Companion repositories
 
-The ImageBuilder containers consumed by this server are built in [`openwrt-imagebuilder-mt6000`](../openwrt-imagebuilder-mt6000/).
+| Repo | Role |
+|---|---|
+| [Ogglord/openwrt-imagebuilder-mt6000](https://github.com/Ogglord/openwrt-imagebuilder-mt6000) | Builds ImageBuilder containers and publishes `branches.json` to the `releases` branch |
+| [Ogglord/asu](https://github.com/Ogglord/asu) | Fork of upstream ASU with `BRANCHES_URL` support, built to `ghcr.io/ogglord/asu:latest` |
+| [pesa1234/MT6000_cust_build](https://github.com/pesa1234/MT6000_cust_build) | Hosts firmware package files referenced by `UPSTREAM_URL` |

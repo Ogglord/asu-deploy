@@ -57,6 +57,9 @@ branches_url = "https://raw.githubusercontent.com/Ogglord/openwrt-imagebuilder-m
 redis_url = "redis://localhost:${REDIS_PORT}"
 public_path = "${PUBLIC_DIR}"
 log_level = "DEBUG"
+
+# Override default upstream branches — all loaded from branches_url
+[branches]
 EOF
 
 # --- Install dependencies and start the dev server ---
@@ -68,7 +71,7 @@ DEV_PORT=8001
 BASE="http://127.0.0.1:${DEV_PORT}"
 
 echo "Starting ASU dev server on ${BASE} ..."
-uv run fastapi dev asu/main.py --port "$DEV_PORT" &
+uv run fastapi dev asu/main.py --host 0.0.0.0 --port "$DEV_PORT" &
 SERVER_PID=$!
 
 # --- Health checks ---

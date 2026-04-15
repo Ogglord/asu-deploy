@@ -1,6 +1,14 @@
-# ASU Server for pesa1234/openwrt (MT6000)
+# ASU Deploy
 
-Self-hosted [Attended Sysupgrade](https://github.com/openwrt/asu) server for the pesa1234/openwrt custom firmware, targeting the GL.iNet Flint 2 (MT6000).
+Deployment config for the self-hosted [Attended Sysupgrade](https://github.com/openwrt/asu) server, targeting [pesa1234/openwrt](https://github.com/pesa1234/openwrt) custom firmware for the GL.iNet Flint 2 (MT6000).
+
+> **Related repos:**
+>
+> | Repo | Purpose |
+> |------|---------|
+> | [Ogglord/asu](https://github.com/Ogglord/asu) | ASU application (fork of openwrt/asu) -- the FastAPI server and worker |
+> | [Ogglord/asu-deploy](https://github.com/Ogglord/asu-deploy) | This repo -- deployment config (compose, config, deploy script) |
+> | [Ogglord/openwrt-imagebuilder-mt6000](https://github.com/Ogglord/openwrt-imagebuilder-mt6000) | CI workflows that build ImageBuilder containers from pesa1234's branches |
 
 ## Architecture
 
@@ -20,26 +28,18 @@ The ImageBuilder containers are built separately via GitHub Actions and publishe
 
 ## Configuration
 
-Copy `.env.example` to `.env` and fill in:
-- `PUBLIC_PATH` -- your Cloudflare Tunnel domain
-- `BASE_CONTAINER` -- your ghcr.io ImageBuilder container name
-- `BRANCHES` -- JSON mapping of pesa's published branches
-- `HC_UUID` -- healthcheck.io UUID for VPS monitoring
-
-## Updating branches
-
-When pesa publishes a new branch in [MT6000_cust_build](https://github.com/pesa1234/MT6000_cust_build):
-
-1. The ImageBuilder container repo will automatically build a new container on its next weekly run
-2. Update the `BRANCHES` JSON in `.env` with the new branch entry
-3. Restart: `systemctl restart asu-server`
+- `asu.toml` -- ASU application config (upstream URL, branches, container image)
+- `.env` -- environment variables for compose services
+- `podman-compose.yml` -- service definitions (redis, api, worker)
 
 ## Files
 
 ```
 bootstrap.sh          -- Idempotent VPS provisioning script
+deploy.sh             -- Deploy/redeploy the stack
 podman-compose.yml    -- Service definitions (redis, api, worker)
-.env.example          -- Configuration template
+asu.toml              -- ASU application config
+.env                  -- Environment variables
 cloudflared-config.yml -- Cloudflare Tunnel ingress rules
 healthcheck.sh        -- Health check script (called by systemd timer)
 systemd/              -- Systemd service and timer units

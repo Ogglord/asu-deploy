@@ -86,21 +86,21 @@ else
     # wrong; assert non-empty so regressions are caught.
     probe "revision"                 "/api/v1/revision/$VERSION/$TGT/$SUBTGT" \
           '.revision // .detail'
-    probe "arch pkg index non-empty" "/json/v1/releases/$VERSION/packages/${ARCH}-index.json" \
+    probe "arch pkg index non-empty" "/json/v1/$VERSION/packages/${ARCH}-index.json" \
           '. | type == "object" and length > 0'
-    probe "target kmods non-empty"   "/json/v1/releases/$VERSION/targets/$TGT/$SUBTGT/index.json" \
+    probe "target kmods non-empty"   "/json/v1/$VERSION/targets/$TGT/$SUBTGT/index.json" \
           '.packages | type == "object" and length > 0'
 
     # Upstream layout sanity.
-    probe "upstream feeds.conf"      "$UPSTREAM/releases/$VERSION/packages/$ARCH/feeds.conf"
-    probe "upstream profiles.json"   "$UPSTREAM/releases/$VERSION/targets/$TGT/$SUBTGT/profiles.json"
-    probe "upstream target kmods"    "$UPSTREAM/releases/$VERSION/targets/$TGT/$SUBTGT/packages/index.json"
+    probe "upstream feeds.conf"      "$UPSTREAM/$VERSION/packages/$ARCH/feeds.conf"
+    probe "upstream profiles.json"   "$UPSTREAM/$VERSION/targets/$TGT/$SUBTGT/profiles.json"
+    probe "upstream target kmods"    "$UPSTREAM/$VERSION/targets/$TGT/$SUBTGT/packages/index.json"
 
-    FIRST_FEED=$(curl -fsS -m 10 "$UPSTREAM/releases/$VERSION/packages/$ARCH/feeds.conf" 2>/dev/null \
+    FIRST_FEED=$(curl -fsS -m 10 "$UPSTREAM/$VERSION/packages/$ARCH/feeds.conf" 2>/dev/null \
                  | awk 'NF>=2 {print $2; exit}')
     if [[ -n "$FIRST_FEED" ]]; then
       probe "upstream feed '$FIRST_FEED'" \
-            "$UPSTREAM/releases/$VERSION/packages/$ARCH/$FIRST_FEED/index.json"
+            "$UPSTREAM/$VERSION/packages/$ARCH/$FIRST_FEED/index.json"
     fi
   done < <(echo "$BRANCHES_JSON" | jq -r '
     .[] | select(.enabled) | .versions[] as $v

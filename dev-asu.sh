@@ -113,12 +113,40 @@ if [[ -n "$(git -C "$SCRIPT_DIR/asu" status --porcelain)" ]] \
   compose build
 fi
 
-# --- Start stack in the foreground (Ctrl+C brings it down) ---
+# --- Print resolved config for transparency ---
+# Parse .env without sourcing it (to avoid surprises from quoting/commands).
+env_val() { grep -E "^${1}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true; }
+redact() { [[ -n "$1" ]] && echo "<set>" || echo "<unset>"; }
+
 echo ""
+echo "=== Config ==="
+echo "  Run user:                $(id -un) (uid=$(id -u))"
+echo "  Podman user:             $ASU_USER (uid=$ASU_UID)"
+echo "  Repo:                    $SCRIPT_DIR"
+echo "  Compose:                 podman-compose.yml + podman-compose.dev.yml"
+echo "  Build context:           ./asu (submodule)"
+echo "  Live-reload mount:       ./asu/asu -> /app/asu:ro"
+echo ""
+echo "  --- from .env ($ENV_FILE) ---"
+echo "  REDIS_URL (base):        $(env_val REDIS_URL)"
+echo "  PUBLIC_PATH:             $(env_val PUBLIC_PATH)"
+echo "  BASE_CONTAINER:          $(env_val BASE_CONTAINER)"
+echo "  UPSTREAM_URL:            $(env_val UPSTREAM_URL)"
+echo "  BRANCHES_URL:            $(env_val BRANCHES_URL)"
+echo "  CONTAINER_SOCKET_PATH:   $(env_val CONTAINER_SOCKET_PATH)"
+echo "  ALLOW_DEFAULTS:          $(env_val ALLOW_DEFAULTS)"
+echo "  HC_UUID:                 $(redact "$(env_val HC_UUID)")"
+echo ""
+echo "  --- overrides from podman-compose.dev.yml ---"
+echo "  server REDIS_URL:        redis://redis:6379/1"
+echo "  worker REDIS_URL:        redis://redis:6379/1"
+echo "  LOG_LEVEL:               DEBUG"
+echo ""
+
+# --- Start stack in the foreground (Ctrl+C brings it down) ---
 echo "=== Starting dev stack (as user: $ASU_USER) ==="
 echo "    Server: http://localhost:8000    (docs: /docs)"
 echo "    Redis:  db=1 (prod=db=0)"
-echo "    Live reload from: $SCRIPT_DIR/asu/asu"
 echo "    Smoke test:  ./smoke-test.sh"
 echo "    Press Ctrl+C to stop"
 echo ""

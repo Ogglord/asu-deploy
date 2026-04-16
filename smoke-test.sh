@@ -50,7 +50,7 @@ probe "static asset"    "/static/style.css"
 # JSON v1 endpoints — the ones this fork actually has to get right
 probe "latest.json"     "/json/v1/latest.json"     '.latest | type == "array" and length > 0'
 probe "branches.json"   "/json/v1/branches.json"   '. | type == "array" and length > 0 and any(.enabled)'
-probe "overview.json"   "/json/v1/overview.json"   '.branches | length > 0 and (.. | objects | select(has("server")) | .server.version != null)'
+probe "overview.json"   "/json/v1/overview.json"   '(.branches | length > 0) and (.server.version != null)'
 
 # Upstream passthrough — picks any branch/version that branches.json lists,
 # so we don't hardcode a version that rots.

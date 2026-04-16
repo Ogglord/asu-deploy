@@ -1,0 +1,35 @@
+# Dev overlay for podman-compose.yml.
+#
+# Usage:
+#   ./dev-asu.sh
+#   # or manually:
+#   podman-compose -f podman-compose.yml -f podman-compose.dev.yml up
+#
+# Builds from the vendored ./asu submodule, bind-mounts source for live
+# reload, and routes all keys to Redis DB 1 so prod state (DB 0) is
+# untouched and `FLUSHDB` on DB 1 is a safe full reset.
+
+services:
+  server:
+    build:
+      context: ./asu
+      dockerfile: Containerfile
+    image: asu-dev:latest
+    command: uv run uvicorn --host 0.0.0.0 --reload --reload-dir /app/asu asu.main:app
+    environment:
+      REDIS_URL: redis://redis:6379/1
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./asu/asu:/app/asu:ro
+
+  worker:
+    build:
+      context: ./asu
+      dockerfile: Containerfile
+    image: asu-dev:latest
+    command: uv run rqworker --url redis://redis:6379/1 default
+    environment:
+      REDIS_URL: redis://redis:6379/1
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./asu/asu:/app/asu:ro

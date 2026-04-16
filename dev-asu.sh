@@ -2,79 +2,125 @@
 # dev-asu.sh — bring up the ASU stack in dev mode against the vendored
 # ./asu submodule, with live code reload and an isolated Redis DB.
 #
-# Dev and prod share the same compose file, container runtime, and ports.
-# The only separation is Redis DB number (prod=0, dev=1), which lets us
-# FLUSHDB freely without touching prod.
+# Dev and prod share the same user (`asu`), podman daemon, network, and
+# ports. The only separation is Redis DB number (prod=0, dev=1), which
+# lets us FLUSHDB freely without touching prod.
 #
-# Requirements: podman, podman-compose. Run as the user that owns the
-# rootless podman socket used by the prod stack (typically `asu` on the
-# VPS, or your own user on a laptop).
+# Run this as your regular user (e.g. `ogge`), NOT as root or `asu`.
+# It uses `sudo` to stop the prod systemd unit and to invoke all podman
+# operations as `asu`. Requires passwordless sudo for your user.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-COMPOSE=(podman-compose -f podman-compose.yml -f podman-compose.dev.yml)
+ASU_USER="asu"
+ASU_UID="$(id -u "$ASU_USER" 2>/dev/null || echo "")"
+SOCKET_PATH="/run/user/${ASU_UID}/podman/podman.sock"
 
-# --- Verify submodule is present ---
+as_asu() {
+  sudo -u "$ASU_USER" --preserve-env=PATH -- "$@"
+}
+
+compose() {
+  as_asu podman-compose -f podman-compose.yml -f podman-compose.dev.yml "$@"
+}
+
+# --- Preflight ---
+if [[ "$(id -u)" -eq 0 ]]; then
+  echo "Error: run this as your regular user, not root." >&2
+  exit 1
+fi
+if [[ "$(id -un)" == "$ASU_USER" ]]; then
+  echo "Error: run this as your own user, not '$ASU_USER'." >&2
+  echo "The script will invoke podman as '$ASU_USER' via sudo." >&2
+  exit 1
+fi
+if [[ -z "$ASU_UID" ]]; then
+  echo "Error: user '$ASU_USER' does not exist. Run bootstrap.sh first." >&2
+  exit 1
+fi
+if ! sudo -n -u "$ASU_USER" true 2>/dev/null; then
+  echo "Error: need passwordless sudo to run commands as '$ASU_USER'." >&2
+  echo "Add a sudoers rule for your user, e.g.:" >&2
+  echo "  $(id -un) ALL=(ALL) NOPASSWD: ALL" >&2
+  exit 1
+fi
 if [[ ! -f "$SCRIPT_DIR/asu/pyproject.toml" ]]; then
-  echo "Error: asu submodule not initialized. Run:"
-  echo "  git submodule update --init --recursive"
+  echo "Error: asu submodule not initialized. Run:" >&2
+  echo "  git submodule update --init --recursive" >&2
+  exit 1
+fi
+if ! as_asu test -r "$SCRIPT_DIR/podman-compose.yml"; then
+  echo "Error: user '$ASU_USER' cannot read $SCRIPT_DIR." >&2
+  echo "Grant read access, e.g.:" >&2
+  echo "  chmod o+rx $(dirname "$SCRIPT_DIR") && chmod -R o+rX $SCRIPT_DIR" >&2
+  exit 1
+fi
+if [[ ! -S "$SOCKET_PATH" ]]; then
+  echo "Error: podman socket not found at $SOCKET_PATH" >&2
+  echo "Ensure '$ASU_USER' has linger enabled and podman.socket is active:" >&2
+  echo "  sudo loginctl enable-linger $ASU_USER" >&2
+  echo "  sudo -u $ASU_USER systemctl --user enable --now podman.socket" >&2
   exit 1
 fi
 
-# --- Stop prod systemd unit if it's running (ports would clash) ---
+# --- Ensure .env has the right socket path for asu's podman ---
+ENV_FILE="$SCRIPT_DIR/.env"
+touch "$ENV_FILE"
+if grep -q '^CONTAINER_SOCKET_PATH=' "$ENV_FILE"; then
+  sed -i "s|^CONTAINER_SOCKET_PATH=.*|CONTAINER_SOCKET_PATH=${SOCKET_PATH}|" "$ENV_FILE"
+else
+  echo "CONTAINER_SOCKET_PATH=${SOCKET_PATH}" >> "$ENV_FILE"
+fi
+
+# --- Stop prod systemd unit (frees ports 8000/6379 under asu) ---
 if systemctl is-active --quiet asu-server 2>/dev/null; then
   echo "Stopping prod asu-server.service..."
   sudo systemctl stop asu-server
 fi
 
-# --- Reset dev Redis DB + orphan build containers ---
+# --- Reset dev Redis DB + orphan build containers (all under asu's podman) ---
 echo "Resetting dev state..."
+compose up -d redis
 
-# Bring Redis up first (idempotent) so we can flush it before starting workers.
-"${COMPOSE[@]}" up -d redis
-
-# Wait for Redis to accept connections (up to 10s)
 for _ in $(seq 1 20); do
-  if podman exec "$("${COMPOSE[@]}" ps -q redis)" redis-cli PING >/dev/null 2>&1; then
+  REDIS_CID="$(compose ps -q redis 2>/dev/null || true)"
+  if [[ -n "$REDIS_CID" ]] && as_asu podman exec "$REDIS_CID" redis-cli PING >/dev/null 2>&1; then
     break
   fi
   sleep 0.5
 done
 
-REDIS_CID=$("${COMPOSE[@]}" ps -q redis)
-podman exec "$REDIS_CID" redis-cli -n 1 FLUSHDB >/dev/null
+if [[ -z "${REDIS_CID:-}" ]]; then
+  echo "Error: redis container did not come up." >&2
+  exit 1
+fi
+
+as_asu podman exec "$REDIS_CID" redis-cli -n 1 FLUSHDB >/dev/null
 echo "  Redis DB 1 flushed"
 
-# Kill orphan ImageBuilder containers from previous dev/prod runs.
-# They attach to the asu-build network; nothing else on this host does.
-ORPHANS=$(podman ps -a --filter network=asu-build -q 2>/dev/null || true)
+ORPHANS="$(as_asu podman ps -a --filter network=asu-build -q 2>/dev/null || true)"
 if [[ -n "$ORPHANS" ]]; then
   echo "  Removing orphan build containers: $(echo "$ORPHANS" | wc -l)"
-  echo "$ORPHANS" | xargs -r podman rm -f >/dev/null
+  echo "$ORPHANS" | xargs -r sudo -u "$ASU_USER" podman rm -f >/dev/null
 fi
 
-# Remove the old standalone dev Redis from the previous dev-asu.sh version.
-if podman container exists dev-asu-redis 2>/dev/null; then
-  echo "  Removing legacy dev-asu-redis container"
-  podman rm -f dev-asu-redis >/dev/null
-fi
-
-# --- Build image from submodule if code or pyproject.toml changed ---
-# podman-compose only rebuilds when asked; let git dirty-state decide.
+# --- Rebuild asu-dev image when submodule is dirty or image is missing ---
 if [[ -n "$(git -C "$SCRIPT_DIR/asu" status --porcelain)" ]] \
-   || ! podman image exists asu-dev:latest 2>/dev/null; then
+   || ! as_asu podman image exists asu-dev:latest 2>/dev/null; then
   echo "Building asu-dev image from ./asu..."
-  "${COMPOSE[@]}" build
+  compose build
 fi
 
-# --- Start the stack in the foreground ---
+# --- Start stack in the foreground (Ctrl+C brings it down) ---
 echo ""
-echo "=== Starting dev stack ==="
+echo "=== Starting dev stack (as user: $ASU_USER) ==="
 echo "    Server: http://localhost:8000    (docs: /docs)"
 echo "    Redis:  db=1 (prod=db=0)"
 echo "    Live reload from: $SCRIPT_DIR/asu/asu"
+echo "    Smoke test:  ./smoke-test.sh"
 echo "    Press Ctrl+C to stop"
 echo ""
-exec "${COMPOSE[@]}" up
+exec sudo -u "$ASU_USER" --preserve-env=PATH -- \
+  podman-compose -f podman-compose.yml -f podman-compose.dev.yml up

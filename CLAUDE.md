@@ -31,6 +31,8 @@ sudo bash deploy.sh
 
 `dev-asu.sh` brings up the compose stack against the `./asu` submodule with live code reload. It isolates dev state on Redis DB 1 (prod = DB 0) and flushes it on every run, so worker-cache problems from a previous failed build never carry over. Stops `asu-server.service` first because ports 8000/6379 are shared with prod.
 
+**Runs as a regular user with passwordless sudo (e.g. `ogge`), not as `asu` or `root`.** The script invokes all podman operations as `asu` via `sudo -u asu` so dev containers land in the same rootless-podman namespace as prod (shared `asu-build` network, same socket path, orphan cleanup works across both). Preflight rejects root and `asu`, verifies the sudoer can `sudo -u asu` without a password, checks the `asu` user can read the repo, and rewrites `CONTAINER_SOCKET_PATH` in the repo-local `.env` to point at `asu`'s rootless socket.
+
 ## After any code change — run the smoke test
 
 ```bash

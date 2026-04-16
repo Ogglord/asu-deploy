@@ -57,11 +57,15 @@ if ! as_asu test -r "$SCRIPT_DIR/podman-compose.yml"; then
   echo "  chmod o+rx $(dirname "$SCRIPT_DIR") && chmod -R o+rX $SCRIPT_DIR" >&2
   exit 1
 fi
-if [[ ! -S "$SOCKET_PATH" ]]; then
+# Check the socket as $ASU_USER — /run/user/$ASU_UID is 700-owned by asu,
+# so the invoking user can't stat the socket path directly.
+if ! as_asu test -S "$SOCKET_PATH"; then
   echo "Error: podman socket not found at $SOCKET_PATH" >&2
   echo "Ensure '$ASU_USER' has linger enabled and podman.socket is active:" >&2
   echo "  sudo loginctl enable-linger $ASU_USER" >&2
-  echo "  sudo -u $ASU_USER systemctl --user enable --now podman.socket" >&2
+  echo "  sudo -u $ASU_USER env XDG_RUNTIME_DIR=/run/user/$ASU_UID \\" >&2
+  echo "    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$ASU_UID/bus \\" >&2
+  echo "    systemctl --user enable --now podman.socket" >&2
   exit 1
 fi
 
@@ -81,18 +85,26 @@ if systemctl is-active --quiet asu-server 2>/dev/null; then
 fi
 
 # --- Reset dev Redis DB + orphan build containers (all under asu's podman) ---
+# Tear down any leftover dev containers first — podman-compose isn't
+# consistent about reusing partially-running pods across interrupted runs.
 echo "Resetting dev state..."
+compose down 2>/dev/null || true
 compose up -d redis
 
+# podman-compose ps -q doesn't accept a service filter, so look up by name.
+# The project name defaults to the compose dir basename (asu-deploy).
+PROJECT="$(basename "$SCRIPT_DIR")"
+REDIS_CID=""
 for _ in $(seq 1 20); do
-  REDIS_CID="$(compose ps -q redis 2>/dev/null || true)"
+  REDIS_CID="$(as_asu podman ps --filter "name=${PROJECT}_redis" -q 2>/dev/null | head -1 || true)"
   if [[ -n "$REDIS_CID" ]] && as_asu podman exec "$REDIS_CID" redis-cli PING >/dev/null 2>&1; then
     break
   fi
+  REDIS_CID=""
   sleep 0.5
 done
 
-if [[ -z "${REDIS_CID:-}" ]]; then
+if [[ -z "$REDIS_CID" ]]; then
   echo "Error: redis container did not come up." >&2
   exit 1
 fi

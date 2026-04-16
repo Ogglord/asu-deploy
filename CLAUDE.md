@@ -18,15 +18,29 @@ sudo bash bootstrap.sh
 # Push updates to an existing VPS (after git pull, as root)
 sudo bash deploy.sh
 
-# Run the ASU server locally for development (not on the VPS!)
-./dev-asu.sh                                 # needs $ASU_DIR pointing at local asu checkout
+# Dev stack against the ./asu submodule with live reload
+./dev-asu.sh
+
+# Probe every read-only endpoint (run after any code change)
+./smoke-test.sh [base-url]
 ```
 
 `bootstrap.sh` is for **fresh** Debian 12 VPSes — installs packages, configures sysctl/containers.conf, creates the `asu` service user with subuid/subgid for rootless podman, sets up cloudflared, then calls `deploy.sh`.
 
 `deploy.sh` is **idempotent** and safe to re-run. It copies files into `/home/asu/asu-server/`, preserves `.env` (never overwritten), rewrites `CONTAINER_SOCKET_PATH` from the current `asu` uid, installs systemd units, pulls container images, restarts services, and runs health checks.
 
-`dev-asu.sh` runs the ASU server **locally** against a podman-started Redis on port 6399. It writes a dev `asu.toml` into `$ASU_DIR` (default `$HOME/repos/asu`) — this is where the generated dev config in the sibling `asu` repo comes from. Don't commit that generated `asu.toml` in the asu repo.
+`dev-asu.sh` brings up the compose stack against the `./asu` submodule with live code reload. It isolates dev state on Redis DB 1 (prod = DB 0) and flushes it on every run, so worker-cache problems from a previous failed build never carry over. Stops `asu-server.service` first because ports 8000/6379 are shared with prod.
+
+## After any code change — run the smoke test
+
+```bash
+./smoke-test.sh                          # default: http://localhost:8000
+./smoke-test.sh https://asu.example.com  # against the prod tunnel
+```
+
+`smoke-test.sh` probes every read-only endpoint — HTML index/stats, `/docs`, `/static/`, `/json/v1/{latest,branches,overview}.json`, and a parameterized `/api/v1/revision/...` derived from whatever `branches.json` currently lists (so the probe doesn't rot as versions change). It does **not** enqueue builds. Exits non-zero on any failure. Requires `curl` and `jq`.
+
+Run this after every meaningful change — compose edit, asu submodule bump, `.env` tweak, or `deploy.sh` on the VPS. For CI-style use: `./smoke-test.sh && echo ok`.
 
 ## Stack layout
 

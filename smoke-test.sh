@@ -63,56 +63,50 @@ probe "overview.json"   "/json/v1/overview.json"   '(.branches | length > 0) and
 # --- Discover state from branches + overview so probes track current data ---
 BRANCHES_JSON=$(curl -fsS -m 10 "$BASE/json/v1/branches.json" 2>/dev/null || echo '[]')
 OVERVIEW_JSON=$(curl -fsS -m 10 "$BASE/json/v1/overview.json" 2>/dev/null || echo '{}')
-
-VERSION=$(echo "$BRANCHES_JSON" | jq -r '[.[] | select(.enabled) | .versions[0]] | .[0] // empty')
-TARGET=$(echo "$BRANCHES_JSON"  | jq -r '[.[] | select(.enabled) | (.targets | keys[0])] | .[0] // empty')
-ARCH=$(echo "$BRANCHES_JSON"    | jq -r '[.[] | select(.enabled) | .targets[]] | .[0] // empty')
 UPSTREAM=$(echo "$OVERVIEW_JSON" | jq -r '.upstream_url // empty' | sed 's:/*$::')
 
-if [[ -z "$VERSION" || -z "$TARGET" || -z "$ARCH" || -z "$UPSTREAM" ]]; then
-  echo "  SKIP cannot derive version/target/arch/upstream from branches+overview — remaining probes skipped"
+# Iterate over every enabled branch/version combo — partial migrations
+# (one version published in the new layout, another still on the old one)
+# would previously pass if the first-sorted branch was the good one.
+BRANCH_COUNT=$(echo "$BRANCHES_JSON" | jq 'map(select(.enabled)) | length')
+if [[ -z "$UPSTREAM" || "$BRANCH_COUNT" == "0" ]]; then
+  echo "  SKIP no enabled branches or upstream_url unknown — per-version probes skipped"
 else
-  IFS='/' read -r TGT SUBTGT <<<"$TARGET"
   echo ""
-  echo "=== Probes derived from branches.json ==="
-  echo "    version:  $VERSION"
-  echo "    target:   $TARGET"
-  echo "    arch:     $ARCH"
-  echo "    upstream: $UPSTREAM"
+  echo "=== Per-branch probes (upstream: $UPSTREAM) ==="
 
-  # --- ASU endpoints that depend on the releases/{version}/ package layout ---
-  # These are the ones that silently returned empty maps when the layout was
-  # wrong — assert non-empty so regressions in CI publishing are caught.
-  probe "revision ($VERSION $TARGET)" \
-        "/api/v1/revision/$VERSION/$TGT/$SUBTGT" \
-        '.revision // .detail'
-  probe "arch pkg index (non-empty)" \
-        "/json/v1/releases/$VERSION/packages/${ARCH}-index.json" \
-        '. | type == "object" and length > 0'
-  probe "target kmods index (non-empty)" \
-        "/json/v1/releases/$VERSION/targets/$TGT/$SUBTGT/index.json" \
-        '.packages | type == "object" and length > 0'
+  # Emit one {version, target, arch} triple per enabled version.
+  while IFS=$'\t' read -r VERSION TARGET ARCH; do
+    [[ -z "$VERSION" ]] && continue
+    IFS='/' read -r TGT SUBTGT <<<"$TARGET"
+    echo ""
+    echo "--- $VERSION ($TARGET / $ARCH) ---"
 
-  # --- Upstream layout sanity — catches CI publish-step regressions before
-  # they manifest as empty responses through ASU. ---
-  echo ""
-  echo "=== Upstream layout ($UPSTREAM) ==="
-  probe "upstream feeds.conf" \
-        "$UPSTREAM/releases/$VERSION/packages/$ARCH/feeds.conf"
-  probe "upstream target profiles.json" \
-        "$UPSTREAM/releases/$VERSION/targets/$TGT/$SUBTGT/profiles.json"
-  probe "upstream target kmods index.json" \
-        "$UPSTREAM/releases/$VERSION/targets/$TGT/$SUBTGT/packages/index.json"
+    # ASU endpoints — silently returned empty maps when the layout was
+    # wrong; assert non-empty so regressions are caught.
+    probe "revision"                 "/api/v1/revision/$VERSION/$TGT/$SUBTGT" \
+          '.revision // .detail'
+    probe "arch pkg index non-empty" "/json/v1/releases/$VERSION/packages/${ARCH}-index.json" \
+          '. | type == "object" and length > 0'
+    probe "target kmods non-empty"   "/json/v1/releases/$VERSION/targets/$TGT/$SUBTGT/index.json" \
+          '.packages | type == "object" and length > 0'
 
-  # Pick the first feed name from feeds.conf (column 2) and verify its index.
-  FIRST_FEED=$(curl -fsS -m 10 "$UPSTREAM/releases/$VERSION/packages/$ARCH/feeds.conf" 2>/dev/null \
-               | awk 'NF>=2 {print $2; exit}')
-  if [[ -n "$FIRST_FEED" ]]; then
-    probe "upstream feed index ($FIRST_FEED)" \
-          "$UPSTREAM/releases/$VERSION/packages/$ARCH/$FIRST_FEED/index.json"
-  else
-    echo "  SKIP feeds.conf empty/unreachable — per-feed index check skipped"
-  fi
+    # Upstream layout sanity.
+    probe "upstream feeds.conf"      "$UPSTREAM/releases/$VERSION/packages/$ARCH/feeds.conf"
+    probe "upstream profiles.json"   "$UPSTREAM/releases/$VERSION/targets/$TGT/$SUBTGT/profiles.json"
+    probe "upstream target kmods"    "$UPSTREAM/releases/$VERSION/targets/$TGT/$SUBTGT/packages/index.json"
+
+    FIRST_FEED=$(curl -fsS -m 10 "$UPSTREAM/releases/$VERSION/packages/$ARCH/feeds.conf" 2>/dev/null \
+                 | awk 'NF>=2 {print $2; exit}')
+    if [[ -n "$FIRST_FEED" ]]; then
+      probe "upstream feed '$FIRST_FEED'" \
+            "$UPSTREAM/releases/$VERSION/packages/$ARCH/$FIRST_FEED/index.json"
+    fi
+  done < <(echo "$BRANCHES_JSON" | jq -r '
+    .[] | select(.enabled) | .versions[] as $v
+    | (.targets | to_entries[]) as $t
+    | [$v, $t.key, $t.value] | @tsv
+  ')
 fi
 
 echo ""

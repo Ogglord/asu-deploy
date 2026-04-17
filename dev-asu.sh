@@ -111,6 +111,20 @@ fi
 echo "Starting services (detached)..."
 compose up -d
 
+# Install the Ctrl+C / SIGTERM handler now, so the stack is torn down
+# cleanly even if the setup steps below (FLUSHDB, orphan cleanup) are
+# interrupted. `trap -` in the handler disarms itself so a second Ctrl+C
+# during teardown isn't swallowed.
+cleanup_stack() {
+  trap - INT TERM
+  echo ""
+  echo "Tearing down dev stack..."
+  compose down
+  exit 0
+}
+trap cleanup_stack INT TERM
+echo "  (Ctrl+C at any point tears the stack down via compose down)"
+
 # --- Wait for redis and flush DB 1 ---
 # podman-compose ps -q doesn't accept a service filter, so look up by name.
 # The project name defaults to the compose dir basename (asu-deploy).
@@ -154,6 +168,7 @@ echo "  Repo:                    $SCRIPT_DIR"
 echo "  Compose:                 podman-compose.yml + podman-compose.dev.yml"
 echo "  Build context:           ./asu (submodule)"
 echo "  Live-reload mount:       ./asu/asu -> /app/asu:ro"
+echo "  Firmware store mount:    /tmp/asu-public-data -> /app/public (server+worker)"
 echo ""
 echo "  --- from .env ($ENV_FILE) ---"
 echo "  REDIS_URL (base):        $(env_val REDIS_URL)"
@@ -179,10 +194,7 @@ echo "    Smoke test:  ./smoke-test.sh"
 echo "    Press Ctrl+C to stop"
 echo ""
 
-trap 'echo ""; echo "Tearing down..."; compose down; exit 0' INT TERM
-
 as_asu podman-compose -f podman-compose.yml -f podman-compose.dev.yml logs -f || true
 
-echo ""
-echo "Log stream exited. Tearing down..."
-compose down
+# If `logs -f` exits on its own (e.g. podman-compose error), still tear down.
+cleanup_stack

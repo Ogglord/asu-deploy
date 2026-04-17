@@ -14,6 +14,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Mirror all stdout/stderr to a log file for this run (overwrite each run).
+LOG_FILE="${DEV_ASU_LOG:-$SCRIPT_DIR/dev-asu.log}"
+exec > >(tee "$LOG_FILE") 2>&1
+echo "dev-asu.sh: logging to $LOG_FILE"
+
 ASU_USER="asu"
 ASU_UID="$(id -u "$ASU_USER" 2>/dev/null || echo "")"
 SOCKET_PATH="/run/user/${ASU_UID}/podman/podman.sock"

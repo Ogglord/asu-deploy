@@ -20,6 +20,10 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ./asu.toml:/app/asu.toml:ro
+      # Shared store — worker writes built firmware here, server serves it.
+      # Bind-mounted to /tmp so it's visible on the host (tmpfs, so cleared
+      # on reboot — fine, ASU regenerates builds on demand).
+      - /tmp/asu-public-data:/app/public
 
   worker:
     image: ghcr.io/ogglord/asu:latest
@@ -33,6 +37,7 @@ services:
       - ./asu.toml:/app/asu.toml:ro
       # Mount host Podman socket so worker can spawn ImageBuilder containers
       - $CONTAINER_SOCKET_PATH:/var/podman.sock:rw
+      - /tmp/asu-public-data:/app/public
     security_opt:
       - label=disable
 

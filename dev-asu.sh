@@ -89,6 +89,9 @@ if systemctl is-active --quiet asu-server 2>/dev/null; then
   sudo systemctl stop asu-server
 fi
 
+# --- Ensure shared-store bind source exists (owned by asu for uid-keep container) ---
+as_asu mkdir -p /tmp/asu-public-data
+
 # --- Tear down any leftover dev containers first ---
 # podman-compose isn't consistent about reusing partially-running pods
 # across interrupted runs.

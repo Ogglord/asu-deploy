@@ -48,7 +48,21 @@ fi
 # Whether to allow custom UCI defaults scripts on first boot
 add_env_if_missing "ALLOW_DEFAULTS" "0"
 
+# Migrate PUBLIC_PATH from URL (old template) to filesystem path. ASU's
+# public_path setting is a Path — a URL produces /app/https:/<host>/store.
+if grep -qE '^PUBLIC_PATH=https?://' "$ENV_FILE" 2>/dev/null; then
+  sed -i 's|^PUBLIC_PATH=.*|PUBLIC_PATH=/app/public|' "$ENV_FILE"
+  echo "  migrated PUBLIC_PATH (URL → /app/public)"
+fi
+add_env_if_missing "PUBLIC_PATH" "/app/public"
+
 chown asu:asu "$ENV_FILE"
+
+# Ensure the firmware-store bind source exists and is owned by asu
+# (server and worker mount /tmp/asu-public-data:/app/public). systemd
+# also recreates this on service start via ExecStartPre, but do it here
+# too so `podman-compose up` run manually right after deploy.sh works.
+install -d -o asu -g asu -m 755 /tmp/asu-public-data
 
 # --- Systemd units ---
 echo "[3/5] Installing systemd units..."

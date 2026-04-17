@@ -7,6 +7,9 @@ Wants=network-online.target
 Type=simple
 User=asu
 WorkingDirectory=/home/asu/asu-server
+# /tmp is tmpfs; recreate the firmware-store bind source on every start
+# so podman doesn't mount onto a missing path after a reboot.
+ExecStartPre=/usr/bin/mkdir -p /tmp/asu-public-data
 ExecStart=/usr/bin/podman-compose up
 ExecStop=/usr/bin/podman-compose down
 Restart=on-failure

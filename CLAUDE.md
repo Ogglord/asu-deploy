@@ -76,7 +76,7 @@ Systemd unit layout (`systemd/`):
 | Key | Purpose |
 |---|---|
 | `REDIS_URL` | `redis://redis:6379` (internal compose DNS) |
-| `PUBLIC_PATH` | Public URL (the Cloudflare Tunnel hostname) |
+| `PUBLIC_PATH` | Filesystem path *inside the container* for the firmware store (default `/app/public`). Mounted as a shared volume so `server` and `worker` see the same directory. Not a URL — the Cloudflare hostname is only configured in `cloudflared-config.yml`. |
 | `BASE_CONTAINER` | `ghcr.io/ogglord/openwrt-imagebuilder` — worker appends `:mediatek-filogic-openwrt-<branch>` |
 | `UPSTREAM_URL` | Base URL for package downloads (points at the imagebuilder `releases` branch raw) |
 | `BRANCHES_URL` | Points at `branches.json` on the imagebuilder `releases` branch — this is the fork-specific delta (upstream ASU has no equivalent) |

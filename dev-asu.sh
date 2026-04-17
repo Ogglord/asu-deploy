@@ -14,6 +14,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+if [[ -n "${TMUX:-}" ]]; then
+  tmux rename-window "dev-asu.sh" 2>/dev/null || true
+fi
+
 # Mirror all stdout/stderr to a log file for this run (overwrite each run).
 # `tee -i` ignores SIGINT so it survives the Ctrl+C that kills the pipeline —
 # otherwise bash's trap would try to echo through a dead pipe (EPIPE/SIGPIPE)

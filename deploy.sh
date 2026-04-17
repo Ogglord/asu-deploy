@@ -82,7 +82,8 @@ for svc in asu-server cloudflared; do
     systemctl restart "$svc"
     echo "  restarted $svc"
   else
-    echo "  $svc is not running, skipping restart"
+    echo "  $svc is not running, starting it..."
+    systemctl start "$svc"
   fi
 done
 

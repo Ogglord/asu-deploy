@@ -15,8 +15,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Mirror all stdout/stderr to a log file for this run (overwrite each run).
+# `tee -i` ignores SIGINT so it survives the Ctrl+C that kills the pipeline —
+# otherwise bash's trap would try to echo through a dead pipe (EPIPE/SIGPIPE)
+# and abort before `compose down` could run.
 LOG_FILE="${DEV_ASU_LOG:-$SCRIPT_DIR/dev-asu.log}"
-exec > >(tee "$LOG_FILE") 2>&1
+exec > >(tee -i "$LOG_FILE") 2>&1
 echo "dev-asu.sh: logging to $LOG_FILE"
 
 ASU_USER="asu"
@@ -115,11 +118,13 @@ compose up -d
 # cleanly even if the setup steps below (FLUSHDB, orphan cleanup) are
 # interrupted. `trap -` in the handler disarms itself so a second Ctrl+C
 # during teardown isn't swallowed.
+LOGS_PID=""
 cleanup_stack() {
   trap - INT TERM
   echo ""
   echo "Tearing down dev stack..."
-  compose down
+  [[ -n "$LOGS_PID" ]] && kill "$LOGS_PID" 2>/dev/null || true
+  compose down || true
   exit 0
 }
 trap cleanup_stack INT TERM
@@ -194,7 +199,12 @@ echo "    Smoke test:  ./smoke-test.sh"
 echo "    Press Ctrl+C to stop"
 echo ""
 
-as_asu podman-compose -f podman-compose.yml -f podman-compose.dev.yml logs -f || true
+# Run `logs -f` in the background and wait on its PID. `wait` is
+# signal-interruptible, so a Ctrl+C that lands while we're blocked here
+# triggers the trap immediately instead of waiting for the child to exit.
+as_asu podman-compose -f podman-compose.yml -f podman-compose.dev.yml logs -f &
+LOGS_PID=$!
+wait "$LOGS_PID" 2>/dev/null || true
 
 # If `logs -f` exits on its own (e.g. podman-compose error), still tear down.
 cleanup_stack

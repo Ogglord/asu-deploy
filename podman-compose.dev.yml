@@ -29,6 +29,13 @@ services:
       # ./asu submodule's git state before invoking compose.
       ASU_ENV: dev
       ASU_VERSION: ${ASU_VERSION:-}
+    # Podman defaults to the `journald` log driver. Rootless containers
+    # write to the *system* journal, which `asu` (not in systemd-journal
+    # or adm) can't read — so `podman logs` and `podman-compose logs -f`
+    # return empty and dev-asu.log stays silent. `k8s-file` stores logs
+    # as files readable by the rootless user, restoring `logs -f` output.
+    logging:
+      driver: k8s-file
     volumes:
       - ./asu/asu:/app/asu:ro
 
@@ -45,5 +52,7 @@ services:
       PYTHONUNBUFFERED: "1"
       ASU_ENV: dev
       ASU_VERSION: ${ASU_VERSION:-}
+    logging:
+      driver: k8s-file
     volumes:
       - ./asu/asu:/app/asu:ro

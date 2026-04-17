@@ -167,11 +167,11 @@ echo "    Redis:  db=1 (prod=db=0)"
 echo "    Smoke test:  ./smoke-test.sh"
 echo "    Press Ctrl+C to stop"
 echo ""
-# redis is already running from the flush step above — only bring up
-# server+worker here, otherwise podman-compose tries to recreate the
-# existing redis container by name and errors out.
+# redis is already running from the flush step above. Use --no-deps so
+# compose doesn't re-resolve `depends_on: redis` and try to recreate the
+# existing redis container by name.
 sudo -u "$ASU_USER" --preserve-env=PATH -- \
-  podman-compose -f podman-compose.yml -f podman-compose.dev.yml up server worker || true
+  podman-compose -f podman-compose.yml -f podman-compose.dev.yml up --no-deps server worker || true
 
 echo ""
 echo "Stack exited. Tearing down..."

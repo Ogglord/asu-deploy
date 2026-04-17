@@ -167,5 +167,12 @@ echo "    Redis:  db=1 (prod=db=0)"
 echo "    Smoke test:  ./smoke-test.sh"
 echo "    Press Ctrl+C to stop"
 echo ""
-exec sudo -u "$ASU_USER" --preserve-env=PATH -- \
-  podman-compose -f podman-compose.yml -f podman-compose.dev.yml up
+# redis is already running from the flush step above — only bring up
+# server+worker here, otherwise podman-compose tries to recreate the
+# existing redis container by name and errors out.
+sudo -u "$ASU_USER" --preserve-env=PATH -- \
+  podman-compose -f podman-compose.yml -f podman-compose.dev.yml up server worker || true
+
+echo ""
+echo "Stack exited. Tearing down..."
+compose down

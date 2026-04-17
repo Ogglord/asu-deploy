@@ -89,13 +89,26 @@ if systemctl is-active --quiet asu-server 2>/dev/null; then
   sudo systemctl stop asu-server
 fi
 
-# --- Reset dev Redis DB + orphan build containers (all under asu's podman) ---
-# Tear down any leftover dev containers first — podman-compose isn't
-# consistent about reusing partially-running pods across interrupted runs.
+# --- Tear down any leftover dev containers first ---
+# podman-compose isn't consistent about reusing partially-running pods
+# across interrupted runs.
 echo "Resetting dev state..."
 compose down 2>/dev/null || true
-compose up -d redis
 
+# --- Rebuild asu-dev image when submodule is dirty or image is missing ---
+# Done before `up` so compose doesn't rebuild mid-flight.
+if [[ -n "$(git -C "$SCRIPT_DIR/asu" status --porcelain)" ]] \
+   || ! as_asu podman image exists asu-dev:latest 2>/dev/null; then
+  echo "Building asu-dev image from ./asu..."
+  compose build
+fi
+
+# --- Bring everything up detached (avoids name collisions from a split
+# redis-then-rest startup) ---
+echo "Starting services (detached)..."
+compose up -d
+
+# --- Wait for redis and flush DB 1 ---
 # podman-compose ps -q doesn't accept a service filter, so look up by name.
 # The project name defaults to the compose dir basename (asu-deploy).
 PROJECT="$(basename "$SCRIPT_DIR")"
@@ -111,23 +124,18 @@ done
 
 if [[ -z "$REDIS_CID" ]]; then
   echo "Error: redis container did not come up." >&2
+  compose down 2>/dev/null || true
   exit 1
 fi
 
 as_asu podman exec "$REDIS_CID" redis-cli -n 1 FLUSHDB >/dev/null
 echo "  Redis DB 1 flushed"
 
+# --- Orphan build container cleanup ---
 ORPHANS="$(as_asu podman ps -a --filter network=asu-build -q 2>/dev/null || true)"
 if [[ -n "$ORPHANS" ]]; then
   echo "  Removing orphan build containers: $(echo "$ORPHANS" | wc -l)"
   echo "$ORPHANS" | xargs -r sudo -u "$ASU_USER" podman rm -f >/dev/null
-fi
-
-# --- Rebuild asu-dev image when submodule is dirty or image is missing ---
-if [[ -n "$(git -C "$SCRIPT_DIR/asu" status --porcelain)" ]] \
-   || ! as_asu podman image exists asu-dev:latest 2>/dev/null; then
-  echo "Building asu-dev image from ./asu..."
-  compose build
 fi
 
 # --- Print resolved config for transparency ---
@@ -160,19 +168,18 @@ echo "  worker REDIS_URL:        redis://redis:6379/1"
 echo "  LOG_LEVEL:               DEBUG"
 echo ""
 
-# --- Start stack in the foreground (Ctrl+C brings it down) ---
-echo "=== Starting dev stack (as user: $ASU_USER) ==="
+# --- Follow logs in the foreground (Ctrl+C tears the stack down) ---
+echo "=== Dev stack running (as user: $ASU_USER) ==="
 echo "    Server: http://localhost:8000    (docs: /docs)"
 echo "    Redis:  db=1 (prod=db=0)"
 echo "    Smoke test:  ./smoke-test.sh"
 echo "    Press Ctrl+C to stop"
 echo ""
-# redis is already running from the flush step above. Use --no-deps so
-# compose doesn't re-resolve `depends_on: redis` and try to recreate the
-# existing redis container by name.
-sudo -u "$ASU_USER" --preserve-env=PATH -- \
-  podman-compose -f podman-compose.yml -f podman-compose.dev.yml up --no-deps server worker || true
+
+trap 'echo ""; echo "Tearing down..."; compose down; exit 0' INT TERM
+
+as_asu podman-compose -f podman-compose.yml -f podman-compose.dev.yml logs -f || true
 
 echo ""
-echo "Stack exited. Tearing down..."
+echo "Log stream exited. Tearing down..."
 compose down

@@ -15,10 +15,15 @@ services:
       context: ./asu
       dockerfile: Containerfile
     image: asu-dev:latest
-    command: uv run uvicorn --host 0.0.0.0 --reload --reload-dir /app/asu asu.main:app
+    # --log-level debug: uvicorn owns its own loggers (uvicorn.access /
+    # uvicorn.error) and ignores ASU's logging.basicConfig level.
+    command: uv run uvicorn --host 0.0.0.0 --reload --reload-dir /app/asu --log-level debug asu.main:app
     environment:
       REDIS_URL: redis://redis:6379/1
       LOG_LEVEL: DEBUG
+      # Force unbuffered stdout so `podman-compose logs -f` shows output
+      # line-by-line instead of holding it in Python's buffer.
+      PYTHONUNBUFFERED: "1"
     volumes:
       - ./asu/asu:/app/asu:ro
 
@@ -27,9 +32,11 @@ services:
       context: ./asu
       dockerfile: Containerfile
     image: asu-dev:latest
-    command: uv run rqworker --url redis://redis:6379/1 default
+    # --logging_level DEBUG turns on rq's build/job tracing.
+    command: uv run rqworker --logging_level DEBUG --url redis://redis:6379/1 default
     environment:
       REDIS_URL: redis://redis:6379/1
       LOG_LEVEL: DEBUG
+      PYTHONUNBUFFERED: "1"
     volumes:
       - ./asu/asu:/app/asu:ro

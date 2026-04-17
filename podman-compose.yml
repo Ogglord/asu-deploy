@@ -14,6 +14,10 @@ services:
     command: uv run uvicorn --host 0.0.0.0 'asu.main:app'
     restart: always
     env_file: .env
+    environment:
+      # Shown as the "environment" tag on the landing page; ASU_VERSION is
+      # baked into the image at build time (short commit SHA).
+      ASU_ENV: prod
     depends_on:
       - redis
     ports:
@@ -30,6 +34,8 @@ services:
     command: uv run rqworker --url redis://redis default
     restart: always
     env_file: .env
+    environment:
+      ASU_ENV: prod
     depends_on:
       - redis
     userns: keep-id

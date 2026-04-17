@@ -24,6 +24,11 @@ services:
       # Force unbuffered stdout so `podman-compose logs -f` shows output
       # line-by-line instead of holding it in Python's buffer.
       PYTHONUNBUFFERED: "1"
+      # Override the prod "prod" label and surface the submodule commit
+      # on the landing page. dev-asu.sh exports ASU_VERSION from the
+      # ./asu submodule's git state before invoking compose.
+      ASU_ENV: dev
+      ASU_VERSION: ${ASU_VERSION:-}
     volumes:
       - ./asu/asu:/app/asu:ro
 
@@ -38,5 +43,7 @@ services:
       REDIS_URL: redis://redis:6379/1
       LOG_LEVEL: DEBUG
       PYTHONUNBUFFERED: "1"
+      ASU_ENV: dev
+      ASU_VERSION: ${ASU_VERSION:-}
     volumes:
       - ./asu/asu:/app/asu:ro

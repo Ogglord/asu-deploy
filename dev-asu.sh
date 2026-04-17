@@ -27,7 +27,9 @@ ASU_UID="$(id -u "$ASU_USER" 2>/dev/null || echo "")"
 SOCKET_PATH="/run/user/${ASU_UID}/podman/podman.sock"
 
 as_asu() {
-  sudo -u "$ASU_USER" --preserve-env=PATH -- "$@"
+  # Preserve ASU_VERSION so compose-env substitution (${ASU_VERSION:-})
+  # in podman-compose.dev.yml picks up what we set below.
+  sudo -u "$ASU_USER" --preserve-env=PATH,ASU_VERSION -- "$@"
 }
 
 compose() {
@@ -90,6 +92,15 @@ fi
 if systemctl is-active --quiet asu-server 2>/dev/null; then
   echo "Stopping prod asu-server.service..."
   sudo systemctl stop asu-server
+fi
+
+# --- Compute ASU_VERSION from the ./asu submodule's git state ---
+# Shown on the server's landing page next to the "dev" environment tag.
+ASU_SHA=$(git -C "$SCRIPT_DIR/asu" rev-parse --short HEAD 2>/dev/null || echo unknown)
+if [[ -n "$(git -C "$SCRIPT_DIR/asu" status --porcelain 2>/dev/null)" ]]; then
+  export ASU_VERSION="${ASU_SHA}-dirty"
+else
+  export ASU_VERSION="${ASU_SHA}"
 fi
 
 # --- Ensure shared-store bind source exists (owned by asu for uid-keep container) ---
@@ -174,6 +185,7 @@ echo "  Compose:                 podman-compose.yml + podman-compose.dev.yml"
 echo "  Build context:           ./asu (submodule)"
 echo "  Live-reload mount:       ./asu/asu -> /app/asu:ro"
 echo "  Firmware store mount:    /tmp/asu-public-data -> /app/public (server+worker)"
+echo "  Landing page version:    ${ASU_VERSION} (ASU_ENV=dev)"
 echo ""
 echo "  --- from .env ($ENV_FILE) ---"
 echo "  REDIS_URL (base):        $(env_val REDIS_URL)"

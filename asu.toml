@@ -4,6 +4,7 @@
 upstream_url = "https://raw.githubusercontent.com/Ogglord/openwrt-imagebuilder-mt6000/releases"
 base_container = "ghcr.io/ogglord/openwrt-imagebuilder"
 branches_url = "https://raw.githubusercontent.com/Ogglord/openwrt-imagebuilder-mt6000/releases/branches.json"
+allow_defaults = true
 
 # Override default upstream branches with empty dict — all branches
 # are loaded dynamically from branches_url above.

@@ -6,6 +6,6 @@ tunnel: <TUNNEL_UUID>
 credentials-file: /home/asu/.cloudflared/<TUNNEL_UUID>.json
 
 ingress:
-  - hostname: asu.yourdomain.com
+  - hostname: sysupgrade.ogglord.com
     service: http://localhost:8000
   - service: http_status:404

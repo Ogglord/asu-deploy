@@ -68,6 +68,7 @@ install -d -o asu -g asu -m 755 /tmp/asu-public-data
 echo "[3/5] Installing systemd units..."
 cp "$SCRIPT_DIR"/systemd/*.service /etc/systemd/system/
 cp "$SCRIPT_DIR"/systemd/*.timer /etc/systemd/system/
+sed -i "s/@ASU_UID@/${ASU_UID}/g" /etc/systemd/system/asu-server.service
 systemctl daemon-reload
 systemctl enable asu-server cloudflared asu-healthcheck.timer
 

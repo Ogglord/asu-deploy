@@ -1,11 +1,12 @@
 [Unit]
 Description=ASU Server (podman-compose)
-After=network-online.target
+After=network-online.target user-runtime-dir@@ASU_UID@.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=asu
+Environment=XDG_RUNTIME_DIR=/run/user/@ASU_UID@
 WorkingDirectory=/home/asu/asu-server
 # /tmp is tmpfs; recreate the firmware-store bind source on every start
 # so podman doesn't mount onto a missing path after a reboot.

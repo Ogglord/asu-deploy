@@ -4,7 +4,8 @@ After=network-online.target user-runtime-dir@@ASU_UID@.service
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=oneshot
+RemainAfterExit=yes
 User=asu
 Environment=XDG_RUNTIME_DIR=/run/user/@ASU_UID@
 WorkingDirectory=/home/asu/asu-server
@@ -12,10 +13,9 @@ WorkingDirectory=/home/asu/asu-server
 # so podman doesn't mount onto a missing path after a reboot.
 ExecStartPre=/usr/bin/mkdir -p /tmp/asu-public-data
 ExecStartPre=/usr/bin/logger -t asu-server -p daemon.info "firmware store: host /tmp/asu-public-data -> container /app/public (server+worker)"
-ExecStart=/usr/bin/podman-compose up
+ExecStartPre=-/usr/bin/podman-compose down
+ExecStart=/usr/bin/podman-compose up -d
 ExecStop=/usr/bin/podman-compose down
-Restart=on-failure
-RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

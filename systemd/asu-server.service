@@ -4,18 +4,25 @@ After=network-online.target user-runtime-dir@@ASU_UID@.service
 Wants=network-online.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 User=asu
 Environment=XDG_RUNTIME_DIR=/run/user/@ASU_UID@
 WorkingDirectory=/home/asu/asu-server
 # /tmp is tmpfs; recreate the firmware-store bind source on every start
 # so podman doesn't mount onto a missing path after a reboot.
 ExecStartPre=/usr/bin/mkdir -p /tmp/asu-public-data
-ExecStartPre=/usr/bin/logger -t asu-server -p daemon.info "firmware store: host /tmp/asu-public-data -> container /app/public (server+worker)"
 ExecStartPre=-/usr/bin/podman-compose down
-ExecStart=/usr/bin/podman-compose up -d
+# Create containers without starting them (no pasta networking involved, won't hang).
+ExecStartPre=/usr/bin/podman-compose up --no-start
+# Start Created containers directly; podman start returns immediately on success
+# or failure without spawning internal podman-wait processes that can hang at boot.
+# If pasta networking isn't ready, this exits non-zero → service fails →
+# Restart=on-failure retries after RestartSec until pasta is up.
+ExecStartPre=/bin/sh -c 'podman ps -a --filter status=created --format "{{.Names}}" | xargs -r podman start'
+ExecStart=/usr/bin/podman-compose wait
 ExecStop=/usr/bin/podman-compose down
+Restart=on-failure
+RestartSec=30
 
 [Install]
 WantedBy=multi-user.target
